@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI老男孩音乐制作工具箱</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .main-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            max-width: 1700px;
+            margin: 0 auto;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 400px;
+            flex-shrink: 0;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+        .upload-area.dragover {
+            background: #f0f3ff;
+            border-color: #764ba2;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .upload-text {
+            color: #666;
+            font-size: 16px;
+        }
+        #fileInput {
+            display: none;
+        }
+        #watermarkFileInput {
+            display: none;
+        }
+        .selected-file {
+            background: #f8f9ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .selected-file.show {
+            display: block;
+        }
+        .selected-file span {
+            color: #333;
+            font-weight: 500;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        .status.show {
+            display: block;
+        }
+        .status.processing {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .results {
+            margin-top: 20px;
+            display: none;
+        }
+        .results.show {
+            display: block;
+        }
+        .results h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .segment-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .segment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9ff;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .segment-item span {
+            color: #333;
+        }
+        .segment-item a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .segment-item a:hover {
+            text-decoration: underline;
+        }
+
+        /* 歌词转拼音样式 */
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 150px;
+            font-family: inherit;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #764ba2;
+        }
+        .pinyin-output {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9ff;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+            display: none;
+        }
+        .pinyin-output.show {
+            display: block;
+        }
+        .copy-btn {
+            margin-top: 15px;
+            background: #28a745;
+        }
+        .copy-btn:hover {
+            box-shadow: 0 5px 20px rgba(40, 167, 69, 0.4);
+        }
+        .copy-btn:disabled {
+            background: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center; color: white; margin-bottom: 30px; font-size: 32px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+        🎵 AI老男孩音乐制作工具箱
+    </h1>
+    <div class="main-container">
+        <!-- 音频处理区域 -->
+        <div class="container">
+            <h1>🎵 音频降速切分</h1>
+
+            <div class="upload-area" id="dropZone">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">点击选择或拖拽音频文件</div>
+                <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.flac">
+            </div>
+
+            <div class="selected-file" id="selectedFile">
+                <span>📎 已选择: <span id="fileName"></span></span>
+            </div>
+
+            <div style="margin-bottom: 20px; display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 8px; color: #333; font-weight: 500;">
+                        降速倍数：
+                    </label>
+                    <input type="number" id="slowdownRate" step="0.5" min="0.5" max="4" value="2"
+                        style="width: 100%; padding: 12px; border: 2px solid #667eea; border-radius: 8px; font-size: 16px;">
+                    <p style="margin-top: 8px; color: #666; font-size: 12px;">1倍=原速50%，2倍=原速33%</p>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 8px; color: #333; font-weight: 500;">
+                        切分份数：
+                    </label>
+                    <input type="number" id="splitCount" step="1" min="1" max="100" value="5"
+                        style="width: 100%; padding: 12px; border: 2px solid #667eea; border-radius: 8px; font-size: 16px;">
+                    <p style="margin-top: 8px; color: #666; font-size: 12px;">默认切分成5份</p>
+                </div>
+            </div>
+
+            <button id="uploadBtn" disabled>开始处理</button>
+
+            <div class="status" id="status"></div>
+
+            <div class="results" id="results">
+                <h3>✅ 处理完成！共 <span id="totalSegments">0</span> 个片段</h3>
+                <div class="segment-list" id="segmentList"></div>
+            </div>
+        </div>
+
+        <!-- 歌词转拼音区域 -->
+        <div class="container">
+            <h1>📝 歌词转拼音</h1>
+
+            <textarea id="lyricsInput" placeholder="请输入中文歌词...&#10;&#10;示例：&#10;车子缓缓的开 你慢慢走来&#10;我竟然看着你发呆"></textarea>
+
+            <button id="pinyinBtn">转换拼音</button>
+
+            <div class="status" id="pinyinStatus"></div>
+
+            <div class="pinyin-output" id="pinyinOutput"></div>
+
+            <button class="copy-btn" id="copyBtn" disabled>复制结果</button>
+        </div>
+
+        <!-- 音频加水印区域 -->
+        <div class="container">
+            <h1>🔊 音频加水印</h1>
+
+            <div class="upload-area" id="watermarkDropZone">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">点击选择或拖拽音频文件</div>
+                <input type="file" id="watermarkFileInput" accept=".mp3,.wav,.m4a,.flac">
+            </div>
+
+            <div class="selected-file" id="watermarkSelectedFile">
+                <span>📎 已选择: <span id="watermarkFileName"></span></span>
+            </div>
+
+            <div style="margin-bottom: 20px; padding: 15px; background: #f8f9ff; border-radius: 10px;">
+                <label style="display: block; margin-bottom: 8px; color: #333; font-weight: 500;">
+                    水印间隔（秒）：
+                </label>
+                <input type="number" id="watermarkInterval" step="1" min="5" max="120" value="5"
+                    style="width: 100%; padding: 12px; border: 2px solid #667eea; border-radius: 8px; font-size: 16px;">
+                <p style="margin-top: 8px; color: #666; font-size: 12px;">女声水印"AI老男孩制作"每隔N秒播放一次（默认5秒）</p>
+                <audio id="watermarkPreview" src="/watermark.mp3" style="margin-top: 10px; width: 100%;" controls></audio>
+            </div>
+
+            <button id="watermarkBtn" disabled>添加水印</button>
+
+            <div class="status" id="watermarkStatus"></div>
+
+            <div class="results" id="watermarkResults">
+                <h3>✅ 处理完成！</h3>
+                <div id="watermarkDownload"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 音频处理部分
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const selectedFile = document.getElementById('selectedFile');
+        const fileName = document.getElementById('fileName');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const results = document.getElementById('results');
+        const segmentList = document.getElementById('segmentList');
+        const totalSegments = document.getElementById('totalSegments');
+
+        let currentFile = null;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            currentFile = file;
+            fileName.textContent = file.name;
+            selectedFile.classList.add('show');
+            uploadBtn.disabled = false;
+            results.classList.remove('show');
+            status.classList.remove('show');
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+
+            const slowdownRateInput = document.getElementById('slowdownRate');
+            const slowdownRate = parseFloat(slowdownRateInput.value) || 1;
+
+            const splitCountInput = document.getElementById('splitCount');
+            const splitCount = parseInt(splitCountInput.value) || 10;
+
+            const formData = new FormData();
+            formData.append('audio', currentFile);
+            formData.append('slowdownRate', slowdownRate);
+            formData.append('splitCount', splitCount);
+
+            uploadBtn.disabled = true;
+            status.textContent = '⏳ 正在处理中，请稍候...';
+            status.className = 'status show processing';
+            results.classList.remove('show');
+
+            try {
+                const res = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    status.textContent = '✅ 处理完成！';
+                    status.className = 'status show success';
+
+                    totalSegments.textContent = data.totalSegments;
+                    segmentList.innerHTML = data.segments.map(seg => `
+                        <div class="segment-item">
+                            <span>${seg.name}</span>
+                            <a href="${seg.url}" download>下载</a>
+                        </div>
+                    `).join('');
+
+                    results.classList.add('show');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                status.textContent = '❌ ' + err.message;
+                status.className = 'status show error';
+            }
+
+            uploadBtn.disabled = false;
+        });
+
+        // 歌词转拼音部分
+        const lyricsInput = document.getElementById('lyricsInput');
+        const pinyinBtn = document.getElementById('pinyinBtn');
+        const pinyinStatus = document.getElementById('pinyinStatus');
+        const pinyinOutput = document.getElementById('pinyinOutput');
+        const copyBtn = document.getElementById('copyBtn');
+
+        pinyinBtn.addEventListener('click', async () => {
+            const lyrics = lyricsInput.value.trim();
+            if (!lyrics) {
+                pinyinStatus.textContent = '❌ 请输入歌词内容';
+                pinyinStatus.className = 'status show error';
+                return;
+            }
+
+            pinyinBtn.disabled = true;
+            pinyinStatus.textContent = '⏳ 转换中...';
+            pinyinStatus.className = 'status show processing';
+            pinyinOutput.classList.remove('show');
+            copyBtn.disabled = true;
+
+            try {
+                const res = await fetch('/pinyin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lyrics })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    pinyinStatus.textContent = '✅ 转换完成！';
+                    pinyinStatus.className = 'status show success';
+                    pinyinOutput.textContent = data.pinyin;
+                    pinyinOutput.classList.add('show');
+                    copyBtn.disabled = false;
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                pinyinStatus.textContent = '❌ ' + err.message;
+                pinyinStatus.className = 'status show error';
+            }
+
+            pinyinBtn.disabled = false;
+        });
+
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(pinyinOutput.textContent)
+                .then(() => {
+                    copyBtn.textContent = '已复制！';
+                    setTimeout(() => {
+                        copyBtn.textContent = '复制结果';
+                    }, 2000);
+                });
+        });
+
+        // 音频加水印部分
+        const watermarkDropZone = document.getElementById('watermarkDropZone');
+        const watermarkFileInput = document.getElementById('watermarkFileInput');
+        const watermarkSelectedFile = document.getElementById('watermarkSelectedFile');
+        const watermarkFileName = document.getElementById('watermarkFileName');
+        const watermarkBtn = document.getElementById('watermarkBtn');
+        const watermarkStatus = document.getElementById('watermarkStatus');
+        const watermarkResults = document.getElementById('watermarkResults');
+        const watermarkDownload = document.getElementById('watermarkDownload');
+
+        let watermarkFile = null;
+
+        watermarkDropZone.addEventListener('click', () => watermarkFileInput.click());
+
+        watermarkFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                watermarkFile = e.target.files[0];
+                watermarkFileName.textContent = watermarkFile.name;
+                watermarkSelectedFile.classList.add('show');
+                watermarkBtn.disabled = false;
+                watermarkResults.classList.remove('show');
+                watermarkStatus.classList.remove('show');
+            }
+        });
+
+        watermarkDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            watermarkDropZone.classList.add('dragover');
+        });
+
+        watermarkDropZone.addEventListener('dragleave', () => {
+            watermarkDropZone.classList.remove('dragover');
+        });
+
+        watermarkDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            watermarkDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                watermarkFile = e.dataTransfer.files[0];
+                watermarkFileName.textContent = watermarkFile.name;
+                watermarkSelectedFile.classList.add('show');
+                watermarkBtn.disabled = false;
+            }
+        });
+
+        watermarkBtn.addEventListener('click', async () => {
+            if (!watermarkFile) return;
+
+            const interval = document.getElementById('watermarkInterval').value || 30;
+
+            const formData = new FormData();
+            formData.append('audio', watermarkFile);
+            formData.append('interval', interval);
+
+            watermarkBtn.disabled = true;
+            watermarkStatus.textContent = '⏳ 正在添加水印...';
+            watermarkStatus.className = 'status show processing';
+            watermarkResults.classList.remove('show');
+
+            try {
+                const res = await fetch('/watermark', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    watermarkStatus.textContent = '✅ 水印添加完成！';
+                    watermarkStatus.className = 'status show success';
+                    watermarkDownload.innerHTML = `<a href="${data.downloadUrl}" download class="download-all">下载带水印音频</a>`;
+                    watermarkResults.classList.add('show');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                watermarkStatus.textContent = '❌ ' + err.message;
+                watermarkStatus.className = 'status show error';
+            }
+
+            watermarkBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
