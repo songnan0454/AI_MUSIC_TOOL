@@ -69,6 +69,9 @@
         #watermarkFileInput {
             display: none;
         }
+        #extractFileInput {
+            display: none;
+        }
         .selected-file {
             background: #f8f9ff;
             padding: 15px;
@@ -250,6 +253,7 @@
 
             <div class="results" id="results">
                 <h3>✅ 处理完成！共 <span id="totalSegments">0</span> 个片段</h3>
+                <p id="bpmInfo" style="margin-bottom: 12px; color: #555; font-size: 14px;"></p>
                 <div class="segment-list" id="segmentList"></div>
             </div>
         </div>
@@ -300,6 +304,37 @@
             <div class="results" id="watermarkResults">
                 <h3>✅ 处理完成！</h3>
                 <div id="watermarkDownload"></div>
+            </div>
+        </div>
+
+        <!-- 视频提取音频区域 -->
+        <div class="container">
+            <h1>🎬 视频提取音频</h1>
+
+            <div class="upload-area" id="extractDropZone">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">点击选择或拖拽视频文件</div>
+                <input type="file" id="extractFileInput" accept=".mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v">
+            </div>
+
+            <div class="selected-file" id="extractSelectedFile">
+                <span>📎 已选择: <span id="extractFileName"></span></span>
+            </div>
+
+            <div style="margin-bottom: 20px; padding: 15px; background: #f8f9ff; border-radius: 10px;">
+                <p style="color: #666; font-size: 13px; line-height: 1.6;">
+                    从视频中分离出音频轨道，导出为 MP3（192kbps）。<br>
+                    支持 mp4 / mov / avi / mkv / webm / flv / wmv / m4v，最大 500MB。
+                </p>
+            </div>
+
+            <button id="extractBtn" disabled>提取音频</button>
+
+            <div class="status" id="extractStatus"></div>
+
+            <div class="results" id="extractResults">
+                <h3>✅ 提取完成！</h3>
+                <div id="extractDownload"></div>
             </div>
         </div>
     </div>
@@ -384,6 +419,14 @@
                     status.className = 'status show success';
 
                     totalSegments.textContent = data.totalSegments;
+
+                    const bpmInfo = document.getElementById('bpmInfo');
+                    if (data.bpm) {
+                        bpmInfo.textContent = `🎵 整首统一 BPM：${data.bpm}（所有片段相同）`;
+                    } else {
+                        bpmInfo.textContent = '🎵 BPM：未能检测';
+                    }
+
                     segmentList.innerHTML = data.segments.map(seg => `
                         <div class="segment-item">
                             <span>${seg.name}</span>
@@ -541,6 +584,87 @@
             }
 
             watermarkBtn.disabled = false;
+        });
+
+        // 视频提取音频部分
+        const extractDropZone = document.getElementById('extractDropZone');
+        const extractFileInput = document.getElementById('extractFileInput');
+        const extractSelectedFile = document.getElementById('extractSelectedFile');
+        const extractFileName = document.getElementById('extractFileName');
+        const extractBtn = document.getElementById('extractBtn');
+        const extractStatus = document.getElementById('extractStatus');
+        const extractResults = document.getElementById('extractResults');
+        const extractDownload = document.getElementById('extractDownload');
+
+        let extractFile = null;
+
+        extractDropZone.addEventListener('click', () => extractFileInput.click());
+
+        extractFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleExtractFile(e.target.files[0]);
+            }
+        });
+
+        extractDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            extractDropZone.classList.add('dragover');
+        });
+
+        extractDropZone.addEventListener('dragleave', () => {
+            extractDropZone.classList.remove('dragover');
+        });
+
+        extractDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            extractDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleExtractFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleExtractFile(file) {
+            extractFile = file;
+            extractFileName.textContent = file.name;
+            extractSelectedFile.classList.add('show');
+            extractBtn.disabled = false;
+            extractResults.classList.remove('show');
+            extractStatus.classList.remove('show');
+        }
+
+        extractBtn.addEventListener('click', async () => {
+            if (!extractFile) return;
+
+            const formData = new FormData();
+            formData.append('video', extractFile);
+
+            extractBtn.disabled = true;
+            extractStatus.textContent = '⏳ 正在提取音频...';
+            extractStatus.className = 'status show processing';
+            extractResults.classList.remove('show');
+
+            try {
+                const res = await fetch('/extract-audio', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    extractStatus.textContent = '✅ 音频提取完成！';
+                    extractStatus.className = 'status show success';
+                    extractDownload.innerHTML = `<a href="${data.downloadUrl}" download class="download-all">下载音频文件</a>`;
+                    extractResults.classList.add('show');
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (err) {
+                extractStatus.textContent = '❌ ' + err.message;
+                extractStatus.className = 'status show error';
+            }
+
+            extractBtn.disabled = false;
         });
     </script>
 </body>
