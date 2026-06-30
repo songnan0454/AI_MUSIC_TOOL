@@ -6,9 +6,17 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { pinyin } = require('pinyin-pro');
 const mm = require('music-metadata');
+const MusicTempo = require('music-tempo');
 
 const app = express();
 const PORT = 3000;
+
+try {
+  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+  ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+} catch (error) {
+  console.warn('未找到项目内 ffmpeg，改用系统 PATH 中的 ffmpeg');
+}
 
 // 创建必要的目录
 const dirs = ['uploads', 'processed', 'output'];
@@ -26,7 +34,10 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const sessionId = uuidv4();
     req.sessionId = sessionId;
-    cb(null, `${sessionId}-${file.originalname}`);
+    // 正确处理中文文件名
+    const originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    file.originalname = originalname;
+    cb(null, `${sessionId}-${originalname}`);
   }
 });
 
@@ -42,6 +53,21 @@ const upload = multer({
     }
   },
   limits: { fileSize: 100 * 1024 * 1024 } // 100MB 限制
+});
+
+// 视频上传配置（用于提取音频）
+const uploadVideo = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('只支持视频文件 (mp4, mov, avi, mkv, webm, flv, wmv, m4v)'));
+    }
+  },
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB 限制
 });
 
 // 解析 JSON 请求体
@@ -80,6 +106,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
   fs.mkdirSync(outputDir, { recursive: true });
 
   const slowedPath = path.join('processed', `${sessionId}-slowed.mp3`);
+  let stabilizedPath;
   const watermarkPath = path.join(__dirname, 'public', 'watermark.mp3');
 
   try {
@@ -129,34 +156,87 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
         .run();
     });
 
-    fs.unlinkSync(tempPath);
+    // 步骤2.5: 稳定化处理（确保音频帧完全均匀）
+    stabilizedPath = path.join('processed', `${sessionId}-stable.mp3`);
+    await new Promise((resolve, reject) => {
+      ffmpeg(slowedPath)
+        .audioFilters('aformat=sample_rates=44100:channel_layouts=stereo')
+        .audioCodec('libmp3lame')
+        .audioBitrate('128k')
+        .audioFrequency(44100)
+        .output(stabilizedPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
 
-    // 使用 music-metadata 读取降速后的音频时长
-    const metadata = await mm.parseFile(slowedPath);
+    fs.unlinkSync(tempPath);
+    fs.unlinkSync(slowedPath);
+
+    // 使用稳定化后的音频
+    const finalAudioPath = stabilizedPath;
+
+    // 使用 music-metadata 读取稳定化后的音频时长
+    const metadata = await mm.parseFile(finalAudioPath);
     const duration = metadata.format.duration;
 
     const segmentTime = duration / splitCount;
 
     console.log(`音频时长: ${duration.toFixed(1)}秒, 切分${splitCount}份, 每份: ${segmentTime.toFixed(1)}秒`);
 
-    // 步骤3: 切分成指定份数
+    // 对整首降速文件统一检测一次 BPM（速度均匀，所有片段 BPM 相同）
+    let bpm = null;
+    const bpmRawPath = path.join('processed', `${sessionId}-bpm.f32le`);
+    try {
+      // 解码为单声道 44100Hz 原始 PCM（music-tempo 默认假设 44100Hz），最多分析前 120 秒
+      await new Promise((resolve, reject) => {
+        ffmpeg(finalAudioPath)
+          .audioChannels(1)
+          .audioFrequency(44100)
+          .duration(120)
+          .format('f32le')
+          .output(bpmRawPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      });
+
+      const rawBuf = fs.readFileSync(bpmRawPath);
+      const samples = new Float32Array(rawBuf.buffer, rawBuf.byteOffset, Math.floor(rawBuf.length / 4));
+      const mt = new MusicTempo(samples);
+      bpm = Math.round(mt.tempo);
+      console.log(`检测 BPM: ${bpm}`);
+    } catch (e) {
+      console.warn('BPM 检测失败:', e.message);
+    } finally {
+      if (fs.existsSync(bpmRawPath)) {
+        try { fs.unlinkSync(bpmRawPath); } catch (e) {}
+      }
+    }
+
+    // 步骤3: 切分成指定份数，输出无损 WAV（采样级精确，无 MP3 编码延迟/静音）
     await new Promise((resolve, reject) => {
-      ffmpeg(slowedPath)
+      ffmpeg(finalAudioPath)
         .outputOptions([
           '-f segment',
-          `-segment_time ${segmentTime}`
+          `-segment_time ${segmentTime}`,
+          '-segment_format wav',
+          '-reset_timestamps 1',
+          '-map 0:a'
         ])
-        .audioCodec('libmp3lame')
-        .audioBitrate('128k')
-        .output(path.join(outputDir, `${originalName}_片段_%03d.mp3`))
+        .audioCodec('pcm_s16le')
+        .output(path.join(outputDir, `${originalName}_片段_%03d.wav`))
         .on('end', resolve)
         .on('error', reject)
         .run();
     });
 
+    // 清理稳定化临时文件
+    fs.unlinkSync(stabilizedPath);
+
     // 获取生成的文件列表
     const files = fs.readdirSync(outputDir)
-      .filter(f => f.endsWith('.mp3'))
+      .filter(f => f.endsWith('.wav'))
       .sort()
       .map(f => ({
         name: f,
@@ -165,13 +245,15 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
 
     // 清理临时文件
     fs.unlinkSync(inputPath);
-    fs.unlinkSync(slowedPath);
+    if (fs.existsSync(slowedPath)) fs.unlinkSync(slowedPath);
+    if (fs.existsSync(stabilizedPath)) fs.unlinkSync(stabilizedPath);
 
     res.json({
       success: true,
       sessionId,
       segments: files,
-      totalSegments: files.length
+      totalSegments: files.length,
+      bpm
     });
 
   } catch (error) {
@@ -180,6 +262,7 @@ app.post('/upload', upload.single('audio'), async (req, res) => {
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       if (fs.existsSync(slowedPath)) fs.unlinkSync(slowedPath);
+      if (stabilizedPath && fs.existsSync(stabilizedPath)) fs.unlinkSync(stabilizedPath);
     } catch (e) {}
 
     res.status(500).json({ error: '音频处理失败: ' + error.message });
@@ -266,6 +349,51 @@ app.post('/watermark', upload.single('audio'), async (req, res) => {
     } catch (e) {}
 
     res.status(500).json({ error: '水印处理失败: ' + error.message });
+  }
+});
+
+// 视频提取音频 API
+app.post('/extract-audio', uploadVideo.single('video'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: '请选择一个视频文件' });
+  }
+
+  // 获取原文件名（不含扩展名）
+  const originalName = path.basename(req.file.originalname, path.extname(req.file.originalname));
+
+  const inputPath = req.file.path;
+  const outputPath = path.join('output', `${originalName}_音频.mp3`);
+
+  try {
+    console.log(`提取音频: ${req.file.originalname}`);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .noVideo()
+        .audioCodec('libmp3lame')
+        .audioBitrate('192k')
+        .audioFrequency(44100)
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+
+    // 清理临时文件
+    fs.unlinkSync(inputPath);
+
+    res.json({
+      success: true,
+      downloadUrl: `/output/${originalName}_音频.mp3`
+    });
+
+  } catch (error) {
+    console.error('音频提取错误:', error);
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    } catch (e) {}
+
+    res.status(500).json({ error: '音频提取失败: ' + error.message });
   }
 });
 
