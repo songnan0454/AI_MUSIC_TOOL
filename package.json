@@ -7,10 +7,12 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "express": "^4.18.2",
-    "fluent-ffmpeg": "^2.1.2",
+    "fluent-ffmpeg": "2.1.2",
     "multer": "^1.4.5-lts.1",
-    "music-metadata": "^11.13.0",
+    "music-metadata": "7.14.0",
+    "music-tempo": "^1.0.3",
     "pinyin-pro": "^3.28.1",
     "say": "^0.16.0",
     "uuid": "^9.0.0"
