@@ -1,0 +1,17 @@
+node_modules/
+uploads/
+processed/
+output/
+destroyed/
+destroyed_segments/
+na_output/
+merged_*.mp3
+lyrics_pinyin.txt
+*.mp3
+*.wav
+*.flac
+!.gitkeep
+!public/watermark.mp3
+.DS_Store
+package-lock.json
+convert_all_pinyin.py
